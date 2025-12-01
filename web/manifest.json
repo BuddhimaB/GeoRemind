@@ -1,6 +1,6 @@
 {
-    "name": "geo_remind",
-    "short_name": "geo_remind",
+    "name": "georemind",
+    "short_name": "georemind",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
