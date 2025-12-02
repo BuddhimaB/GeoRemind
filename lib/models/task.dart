@@ -5,8 +5,6 @@ class Task {
   final double latitude;
   final double longitude;
   final double radiusMeters;
-
-  // Later we can add: speedThreshold, dwellTimeSeconds, isCompleted, etc.
   final bool isCompleted;
 
   Task({
@@ -36,10 +34,30 @@ class Task {
       id: map['id'] as int?,
       title: map['title'] as String,
       description: map['description'] as String?,
-      latitude: map['lat'] as double,
-      longitude: map['lng'] as double,
-      radiusMeters: map['radius_m'] as double,
+      latitude: (map['lat'] as num).toDouble(),
+      longitude: (map['lng'] as num).toDouble(),
+      radiusMeters: (map['radius_m'] as num).toDouble(),
       isCompleted: (map['is_completed'] as int) == 1,
+    );
+  }
+
+  Task copyWith({
+    int? id,
+    String? title,
+    String? description,
+    double? latitude,
+    double? longitude,
+    double? radiusMeters,
+    bool? isCompleted,
+  }) {
+    return Task(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      radiusMeters: radiusMeters ?? this.radiusMeters,
+      isCompleted: isCompleted ?? this.isCompleted,
     );
   }
 }
