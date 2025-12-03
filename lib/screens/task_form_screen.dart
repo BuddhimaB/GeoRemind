@@ -7,11 +7,14 @@ import 'map_picker_screen.dart';
 
 
 class TaskFormScreen extends StatefulWidget {
-  const TaskFormScreen({super.key});
+  final Task? initialTask;
+
+  const TaskFormScreen({super.key, this.initialTask});
 
   @override
   State<TaskFormScreen> createState() => _TaskFormScreenState();
 }
+
 
 class _TaskFormScreenState extends State<TaskFormScreen> {
   final _formKey = GlobalKey<FormState>();
@@ -23,8 +26,21 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
   // Start with null: user must pick or use current location
   double? _latitude;
   double? _longitude;
-
   bool _isLocFetching = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final t = widget.initialTask;
+    if (t != null) {
+      _titleController.text = t.title;
+      _descriptionController.text = t.description ?? '';
+      _radiusController.text = t.radiusMeters.toStringAsFixed(0);
+      _latitude = t.latitude;
+      _longitude = t.longitude;
+    }
+  }
 
   @override
   void dispose() {
@@ -101,6 +117,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
     final radius = double.tryParse(_radiusController.text.trim()) ?? 100.0;
 
     final task = Task(
+      id: widget.initialTask?.id,
       title: _titleController.text.trim(),
       description: _descriptionController.text.trim().isEmpty
           ? null
@@ -108,6 +125,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       latitude: _latitude!,
       longitude: _longitude!,
       radiusMeters: radius,
+      isCompleted: widget.initialTask?.isCompleted ?? false,
     );
 
     Navigator.of(context).pop(task);
@@ -119,8 +137,11 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('New Geo Reminder'),
+        title: Text(widget.initialTask == null
+            ? 'New Geo Reminder'
+            : 'Edit Geo Reminder'),
       ),
+
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Form(
