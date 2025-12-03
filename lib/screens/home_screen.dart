@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+
 import '../db/app_database.dart';
 import '../models/task.dart';
+import '../services/location_service.dart';
+import '../services/notification_service.dart';
 import 'task_form_screen.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,6 +23,53 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadTasks();
+  }
+
+  Future<void> _checkNearbyTasks() async {
+    final pos = await LocationService.getCurrentPosition();
+    if (pos == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Unable to get current location. Check GPS and permissions.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    final currentLat = pos.latitude;
+    final currentLng = pos.longitude;
+
+    int triggered = 0;
+
+    for (final t in _tasks) {
+      final distance = Geolocator.distanceBetween(
+        currentLat,
+        currentLng,
+        t.latitude,
+        t.longitude,
+      );
+
+      if (distance <= t.radiusMeters) {
+        triggered++;
+        await NotificationService.showReminder(t);
+      }
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            triggered == 0
+                ? 'No reminders in range.'
+                : 'Triggered $triggered reminder(s). Check notifications.',
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _loadTasks() async {
@@ -60,7 +112,15 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('GeoRemind'),
+        actions: [
+          IconButton(
+            onPressed: _checkNearbyTasks,
+            icon: const Icon(Icons.notifications_active),
+            tooltip: 'Check nearby reminders',
+          ),
+        ],
       ),
+
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _tasks.isEmpty

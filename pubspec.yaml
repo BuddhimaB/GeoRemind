@@ -43,13 +43,9 @@ dependencies:
   sqflite: ^2.4.0
   path_provider: ^2.1.4
 
-  # (Later) Google Maps for picking location
-  google_maps_flutter: ^2.9.0
-
-
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
+  # Google Maps + place search
+  google_maps_flutter: ^2.14.0
+  geocoding: ^2.2.0
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
