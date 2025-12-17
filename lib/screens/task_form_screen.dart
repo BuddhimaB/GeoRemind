@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+
 import '../models/task.dart';
 import '../services/location_service.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'map_picker_screen.dart';
-
 
 class TaskFormScreen extends StatefulWidget {
   final Task? initialTask;
@@ -15,7 +14,6 @@ class TaskFormScreen extends StatefulWidget {
   State<TaskFormScreen> createState() => _TaskFormScreenState();
 }
 
-
 class _TaskFormScreenState extends State<TaskFormScreen> {
   final _formKey = GlobalKey<FormState>();
 
@@ -23,9 +21,9 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
   final _descriptionController = TextEditingController();
   final _radiusController = TextEditingController(text: '100');
 
-  // Start with null: user must pick or use current location
   double? _latitude;
   double? _longitude;
+  String? _locationName;
   bool _isLocFetching = false;
 
   @override
@@ -51,7 +49,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
   }
 
   Future<void> _pickOnMap() async {
-    final result = await Navigator.of(context).push<LatLng>(
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
       MaterialPageRoute(
         builder: (_) => MapPickerScreen(
           initialLat: _latitude,
@@ -60,12 +58,14 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       ),
     );
 
-    if (result != null) {
-      setState(() {
-        _latitude = result.latitude;
-        _longitude = result.longitude;
-      });
-    }
+    if (result == null) return;
+
+    final LatLng ll = result["latLng"] as LatLng;
+    setState(() {
+      _latitude = ll.latitude;
+      _longitude = ll.longitude;
+      _locationName = result["name"] as String?; // can be null if user tapped map
+    });
   }
 
   Future<void> _useCurrentLocation() async {
@@ -77,8 +77,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text(
-                  'Location permission not granted or services disabled.'),
+              content: Text('Location permission not granted or services disabled.'),
             ),
           );
         }
@@ -88,6 +87,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       setState(() {
         _latitude = pos.latitude;
         _longitude = pos.longitude;
+        _locationName = "Current location"; // simple label (optional)
       });
     } catch (e) {
       if (mounted) {
@@ -96,9 +96,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isLocFetching = false);
-      }
+      if (mounted) setState(() => _isLocFetching = false);
     }
   }
 
@@ -107,12 +105,11 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
 
     if (_latitude == null || _longitude == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please set a location (use current location).'),
-        ),
+        const SnackBar(content: Text('Please set a location.')),
       );
       return;
     }
+    _locationName = "Current location";
     final now = DateTime.now();
     final radius = double.tryParse(_radiusController.text.trim()) ?? 100.0;
 
@@ -125,8 +122,10 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       latitude: _latitude!,
       longitude: _longitude!,
       radiusMeters: radius,
+      locationName: _locationName,
       isCompleted: widget.initialTask?.isCompleted ?? false,
       expiresAt: widget.initialTask?.expiresAt ?? now.add(const Duration(hours: 24)),
+      // Later: store locationName in Task model + DB
     );
 
     Navigator.of(context).pop(task);
@@ -136,13 +135,16 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
   Widget build(BuildContext context) {
     final hasLocation = _latitude != null && _longitude != null;
 
+    final locationText = !hasLocation
+        ? 'No location selected yet'
+        : (_locationName != null && _locationName!.trim().isNotEmpty)
+        ? _locationName!
+        : 'Lat: ${_latitude!.toStringAsFixed(5)}, Lng: ${_longitude!.toStringAsFixed(5)}';
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.initialTask == null
-            ? 'New Geo Reminder'
-            : 'Edit Geo Reminder'),
+        title: Text(widget.initialTask == null ? 'New Geo Reminder' : 'Edit Geo Reminder'),
       ),
-
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Form(
@@ -155,45 +157,30 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                   labelText: 'Title',
                   hintText: 'e.g. Buy groceries',
                 ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Title is required';
-                  }
-                  return null;
-                },
+                validator: (value) =>
+                (value == null || value.trim().isEmpty) ? 'Title is required' : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _descriptionController,
-                decoration: const InputDecoration(
-                  labelText: 'Description (optional)',
-                ),
+                decoration: const InputDecoration(labelText: 'Description (optional)'),
                 maxLines: 2,
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _radiusController,
-                decoration: const InputDecoration(
-                  labelText: 'Radius (meters)',
-                ),
+                decoration: const InputDecoration(labelText: 'Radius (meters)'),
                 keyboardType: TextInputType.number,
                 validator: (value) {
                   final v = double.tryParse((value ?? '').trim());
-                  if (v == null || v <= 0) {
-                    return 'Enter a valid radius';
-                  }
+                  if (v == null || v <= 0) return 'Enter a valid radius';
                   return null;
                 },
               ),
               const SizedBox(height: 16),
               ListTile(
                 title: const Text('Location'),
-                subtitle: hasLocation
-                    ? Text(
-                  'Lat: ${_latitude!.toStringAsFixed(5)}, '
-                      'Lng: ${_longitude!.toStringAsFixed(5)}',
-                )
-                    : const Text('No location selected yet'),
+                subtitle: Text(locationText),
               ),
               const SizedBox(height: 8),
               Row(

@@ -1,7 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-// import 'package:geocoding/geocoding.dart' as geocoding;
-import 'dart:convert';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:http/http.dart' as http;
 
@@ -10,7 +10,6 @@ const String kPlacesApiKey = "AIzaSyDR3mbeo_yg95p802TMhXohWjE6DXN6DiM";
 class MapPickerScreen extends StatefulWidget {
   final double? initialLat;
   final double? initialLng;
-
 
   const MapPickerScreen({
     super.key,
@@ -24,10 +23,9 @@ class MapPickerScreen extends StatefulWidget {
 
 class _MapPickerScreenState extends State<MapPickerScreen> {
   LatLng? _selected;
-  GoogleMapController? _mapController;
+  String? _selectedName;
 
-  // final TextEditingController _searchController = TextEditingController();
-  // bool _isSearching = false;
+  GoogleMapController? _mapController;
 
   @override
   void initState() {
@@ -35,12 +33,6 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     if (widget.initialLat != null && widget.initialLng != null) {
       _selected = LatLng(widget.initialLat!, widget.initialLng!);
     }
-  }
-
-  @override
-  void dispose() {
-    // _searchController.dispose();
-    super.dispose();
   }
 
   CameraPosition get _initialCameraPosition {
@@ -57,12 +49,17 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   void _onTap(LatLng pos) {
     setState(() {
       _selected = pos;
+      _selectedName = null;
     });
   }
 
   void _onSave() {
     if (_selected == null) return;
-    Navigator.of(context).pop<LatLng>(_selected);
+
+    Navigator.of(context).pop({
+      "latLng": _selected,
+      "name": _selectedName,
+    });
   }
 
   Future<List<Map<String, String>>> fetchPlaceSuggestions(String input) async {
@@ -72,12 +69,13 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
       "https://maps.googleapis.com/maps/api/place/autocomplete/json"
           "?input=${Uri.encodeComponent(input)}"
           "&key=$kPlacesApiKey"
-          "&components=country:lk", // optional: Sri Lanka only
+          "&components=country:lk",
     );
 
     final res = await http.get(uri);
     final data = json.decode(res.body);
 
+    if (data["status"] != "OK") return [];
     final preds = (data["predictions"] as List);
     return preds.map<Map<String, String>>((p) {
       return {
@@ -98,51 +96,14 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     final res = await http.get(uri);
     final data = json.decode(res.body);
 
-    final loc = data["result"]["geometry"]["location"];
-    return LatLng((loc["lat"] as num).toDouble(), (loc["lng"] as num).toDouble());
-  }
+    if (data["status"] != "OK") return null;
 
-  // Future<void> _searchPlace() async {
-  //   final query = _searchController.text.trim();
-  //   if (query.isEmpty) return;
-  //
-  //   setState(() => _isSearching = true);
-  //
-  //   try {
-  //     final results = await geocoding.locationFromAddress(query);
-  //     if (results.isEmpty) {
-  //       if (mounted) {
-  //         ScaffoldMessenger.of(context).showSnackBar(
-  //           const SnackBar(content: Text('No location found for that name')),
-  //         );
-  //       }
-  //       return;
-  //     }
-  //
-  //     final loc = results.first;
-  //     final target = LatLng(loc.latitude, loc.longitude);
-  //
-  //     setState(() {
-  //       _selected = target;
-  //     });
-  //
-  //     await _mapController?.animateCamera(
-  //       CameraUpdate.newCameraPosition(
-  //         CameraPosition(target: target, zoom: 15),
-  //       ),
-  //     );
-  //   } catch (e) {
-  //     if (mounted) {
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         SnackBar(content: Text('Failed to search location: $e')),
-  //       );
-  //     }
-  //   } finally {
-  //     if (mounted) {
-  //       setState(() => _isSearching = false);
-  //     }
-  //   }
-  // }
+    final loc = data["result"]["geometry"]["location"];
+    return LatLng(
+      (loc["lat"] as num).toDouble(),
+      (loc["lng"] as num).toDouble(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -170,12 +131,14 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
               Marker(
                 markerId: const MarkerId('selected'),
                 position: _selected!,
+                infoWindow: _selectedName == null
+                    ? const InfoWindow(title: "Selected location")
+                    : InfoWindow(title: _selectedName),
               ),
             },
             myLocationEnabled: true,
             myLocationButtonEnabled: true,
           ),
-          // Search bar overlay
           Positioned(
             top: 16,
             left: 16,
@@ -191,19 +154,25 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                   );
                 },
                 onSelected: (suggestion) async {
-                  final latLng = await fetchPlaceLatLng(suggestion["place_id"]!);
+                  final latLng =
+                  await fetchPlaceLatLng(suggestion["place_id"]!);
                   if (latLng == null) return;
 
                   setState(() {
                     _selected = latLng;
+                    _selectedName = suggestion["description"];
                   });
+                  FocusScope.of(context).unfocus();
 
                   await _mapController?.animateCamera(
                     CameraUpdate.newLatLngZoom(latLng, 16),
                   );
+                  Navigator.of(context).pop({
+                    "latLng": latLng,
+                    "name": suggestion["description"],
+                  });
                 },
                 builder: (context, controller, focusNode) {
-                  // use typeahead internal controller instead of your _searchController
                   return TextField(
                     controller: controller,
                     focusNode: focusNode,
@@ -211,7 +180,8 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                       hintText: "Search place (e.g. Colombo Fort)",
                       prefixIcon: Icon(Icons.search),
                       border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      contentPadding:
+                      EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     ),
                   );
                 },

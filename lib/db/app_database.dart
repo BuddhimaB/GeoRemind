@@ -19,13 +19,14 @@ class AppDatabase {
 
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
       CREATE TABLE tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
         description TEXT,
+        location_name TEXT,
         lat REAL NOT NULL,
         lng REAL NOT NULL,
         radius_m REAL NOT NULL,
@@ -35,7 +36,8 @@ class AppDatabase {
     ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
+        if (oldVersion < 3) {
+          await db.execute('ALTER TABLE tasks ADD COLUMN location_name TEXT');
           await db.execute('ALTER TABLE tasks ADD COLUMN expires_at INTEGER');
         }
       },

@@ -5,6 +5,7 @@ class Task {
   final double latitude;
   final double longitude;
   final double radiusMeters;
+  final String? locationName;
   final bool isCompleted;
   final DateTime? expiresAt;
 
@@ -15,6 +16,7 @@ class Task {
     required this.latitude,
     required this.longitude,
     required this.radiusMeters,
+    this.locationName,
     this.isCompleted = false,
     this.expiresAt,
   });
@@ -27,6 +29,7 @@ class Task {
       'lat': latitude,
       'lng': longitude,
       'radius_m': radiusMeters,
+      'location_name': locationName,
       'is_completed': isCompleted ? 1 : 0,
       'expires_at': expiresAt?.millisecondsSinceEpoch,
     };
@@ -40,6 +43,7 @@ class Task {
       latitude: (map['lat'] as num).toDouble(),
       longitude: (map['lng'] as num).toDouble(),
       radiusMeters: (map['radius_m'] as num).toDouble(),
+      locationName: map['location_name'] as String?,
       isCompleted: (map['is_completed'] as int) == 1,
       expiresAt: map['expires_at'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['expires_at'] as int)
@@ -54,6 +58,7 @@ class Task {
     double? latitude,
     double? longitude,
     double? radiusMeters,
+    String? locationName,
     bool? isCompleted,
     DateTime? expiresAt,
   }) {
@@ -64,6 +69,7 @@ class Task {
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       radiusMeters: radiusMeters ?? this.radiusMeters,
+      locationName: locationName ?? this.locationName,
       isCompleted: isCompleted ?? this.isCompleted,
       expiresAt: expiresAt ?? this.expiresAt,
     );
