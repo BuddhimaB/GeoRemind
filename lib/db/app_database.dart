@@ -19,19 +19,25 @@ class AppDatabase {
 
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
-          CREATE TABLE tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            description TEXT,
-            lat REAL NOT NULL,
-            lng REAL NOT NULL,
-            radius_m REAL NOT NULL,
-            is_completed INTEGER NOT NULL DEFAULT 0
-          )
-        ''');
+      CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT,
+        lat REAL NOT NULL,
+        lng REAL NOT NULL,
+        radius_m REAL NOT NULL,
+        is_completed INTEGER NOT NULL DEFAULT 0,
+        expires_at INTEGER
+      )
+    ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('ALTER TABLE tasks ADD COLUMN expires_at INTEGER');
+        }
       },
     );
   }

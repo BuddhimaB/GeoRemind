@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:geocoding/geocoding.dart' as geocoding;
+// import 'package:geocoding/geocoding.dart' as geocoding;
+import 'dart:convert';
+import 'package:flutter_typeahead/flutter_typeahead.dart';
+import 'package:http/http.dart' as http;
+
+const String kPlacesApiKey = "AIzaSyDR3mbeo_yg95p802TMhXohWjE6DXN6DiM";
 
 class MapPickerScreen extends StatefulWidget {
   final double? initialLat;
   final double? initialLng;
+
 
   const MapPickerScreen({
     super.key,
@@ -20,8 +26,8 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   LatLng? _selected;
   GoogleMapController? _mapController;
 
-  final TextEditingController _searchController = TextEditingController();
-  bool _isSearching = false;
+  // final TextEditingController _searchController = TextEditingController();
+  // bool _isSearching = false;
 
   @override
   void initState() {
@@ -33,7 +39,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
 
   @override
   void dispose() {
-    _searchController.dispose();
+    // _searchController.dispose();
     super.dispose();
   }
 
@@ -59,47 +65,84 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     Navigator.of(context).pop<LatLng>(_selected);
   }
 
-  Future<void> _searchPlace() async {
-    final query = _searchController.text.trim();
-    if (query.isEmpty) return;
+  Future<List<Map<String, String>>> fetchPlaceSuggestions(String input) async {
+    if (input.trim().isEmpty) return [];
 
-    setState(() => _isSearching = true);
+    final uri = Uri.parse(
+      "https://maps.googleapis.com/maps/api/place/autocomplete/json"
+          "?input=${Uri.encodeComponent(input)}"
+          "&key=$kPlacesApiKey"
+          "&components=country:lk", // optional: Sri Lanka only
+    );
 
-    try {
-      final results = await geocoding.locationFromAddress(query);
-      if (results.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No location found for that name')),
-          );
-        }
-        return;
-      }
+    final res = await http.get(uri);
+    final data = json.decode(res.body);
 
-      final loc = results.first;
-      final target = LatLng(loc.latitude, loc.longitude);
-
-      setState(() {
-        _selected = target;
-      });
-
-      await _mapController?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: target, zoom: 15),
-        ),
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to search location: $e')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSearching = false);
-      }
-    }
+    final preds = (data["predictions"] as List);
+    return preds.map<Map<String, String>>((p) {
+      return {
+        "description": p["description"],
+        "place_id": p["place_id"],
+      };
+    }).toList();
   }
+
+  Future<LatLng?> fetchPlaceLatLng(String placeId) async {
+    final uri = Uri.parse(
+      "https://maps.googleapis.com/maps/api/place/details/json"
+          "?place_id=$placeId"
+          "&fields=geometry"
+          "&key=$kPlacesApiKey",
+    );
+
+    final res = await http.get(uri);
+    final data = json.decode(res.body);
+
+    final loc = data["result"]["geometry"]["location"];
+    return LatLng((loc["lat"] as num).toDouble(), (loc["lng"] as num).toDouble());
+  }
+
+  // Future<void> _searchPlace() async {
+  //   final query = _searchController.text.trim();
+  //   if (query.isEmpty) return;
+  //
+  //   setState(() => _isSearching = true);
+  //
+  //   try {
+  //     final results = await geocoding.locationFromAddress(query);
+  //     if (results.isEmpty) {
+  //       if (mounted) {
+  //         ScaffoldMessenger.of(context).showSnackBar(
+  //           const SnackBar(content: Text('No location found for that name')),
+  //         );
+  //       }
+  //       return;
+  //     }
+  //
+  //     final loc = results.first;
+  //     final target = LatLng(loc.latitude, loc.longitude);
+  //
+  //     setState(() {
+  //       _selected = target;
+  //     });
+  //
+  //     await _mapController?.animateCamera(
+  //       CameraUpdate.newCameraPosition(
+  //         CameraPosition(target: target, zoom: 15),
+  //       ),
+  //     );
+  //   } catch (e) {
+  //     if (mounted) {
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         SnackBar(content: Text('Failed to search location: $e')),
+  //       );
+  //     }
+  //   } finally {
+  //     if (mounted) {
+  //       setState(() => _isSearching = false);
+  //     }
+  //   }
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -137,37 +180,41 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
             top: 16,
             left: 16,
             right: 16,
-            child: Card(
+            child: Material(
               elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _searchController,
-                      textInputAction: TextInputAction.search,
-                      onSubmitted: (_) => _searchPlace(),
-                      decoration: const InputDecoration(
-                        hintText: 'Search place (e.g. Colombo Fort)',
-                        contentPadding:
-                        EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        border: InputBorder.none,
-                      ),
+              borderRadius: BorderRadius.circular(24),
+              child: TypeAheadField<Map<String, String>>(
+                suggestionsCallback: fetchPlaceSuggestions,
+                itemBuilder: (context, suggestion) {
+                  return ListTile(
+                    title: Text(suggestion["description"]!),
+                  );
+                },
+                onSelected: (suggestion) async {
+                  final latLng = await fetchPlaceLatLng(suggestion["place_id"]!);
+                  if (latLng == null) return;
+
+                  setState(() {
+                    _selected = latLng;
+                  });
+
+                  await _mapController?.animateCamera(
+                    CameraUpdate.newLatLngZoom(latLng, 16),
+                  );
+                },
+                builder: (context, controller, focusNode) {
+                  // use typeahead internal controller instead of your _searchController
+                  return TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    decoration: const InputDecoration(
+                      hintText: "Search place (e.g. Colombo Fort)",
+                      prefixIcon: Icon(Icons.search),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     ),
-                  ),
-                  IconButton(
-                    icon: _isSearching
-                        ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                        : const Icon(Icons.search),
-                    onPressed: _isSearching ? null : _searchPlace,
-                  ),
-                ],
+                  );
+                },
               ),
             ),
           ),

@@ -28,11 +28,17 @@ class _HomeScreenState extends State<HomeScreen> {
   // tasks already notified during this app session
   final Set<int> _alreadyFired = {};
 
-  // ~ 5 m/s ≈ 18 km/h (walking < this, driving > this)
-  static const double _speedThresholdMps = 5.0;
+  // User-configurable speed threshold (default 80 km/h)
+  double _speedThresholdMps = 80 / 3.6; // ≈ 22.22 m/s
 
   // must stay inside radius this long before triggering
   static const Duration _dwellThreshold = Duration(seconds: 30);
+
+  bool _isExpired(Task t) {
+    final expiresAt = t.expiresAt;
+    if (expiresAt == null) return false;
+    return DateTime.now().isAfter(expiresAt);
+  }
 
   Future<void> _editTask(Task task) async {
     final updatedTask = await Navigator.of(context).push<Task>(
@@ -103,6 +109,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final now = DateTime.now();
 
     for (final t in _tasks) {
+      // ⬇️ skip expired or completed tasks
+      if (_isExpired(t) || t.isCompleted) continue;
+
       final int id = t.id ?? t.hashCode;
 
       final distance = Geolocator.distanceBetween(
@@ -115,29 +124,86 @@ class _HomeScreenState extends State<HomeScreen> {
       final bool inside = distance <= t.radiusMeters;
 
       if (inside) {
-        // First time inside: record entry time
         _taskEnterTimes.putIfAbsent(id, () => now);
 
         final enterTime = _taskEnterTimes[id]!;
         final dwell = now.difference(enterTime);
 
-        // Already notified before in this session? skip
         if (_alreadyFired.contains(id)) {
           continue;
         }
 
-        // Dwell time check
         if (dwell >= _dwellThreshold) {
           _alreadyFired.add(id);
           await NotificationService.showReminder(t);
         }
       } else {
-        // Outside radius: reset dwell timer for this task
         _taskEnterTimes.remove(id);
-        // Optionally allow retrigger later by clearing alreadyFired here
-        // _alreadyFired.remove(id);
+        // _alreadyFired.remove(id); // optional
       }
     }
+  }
+
+  Future<void> _openSettingsDialog() async {
+    // convert current m/s to km/h for UI
+    double tempKmh = _speedThresholdMps * 3.6;
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text('Settings'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Speed threshold (km/h)'),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${tempKmh.toStringAsFixed(0)} km/h',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  Slider(
+                    min: 10,
+                    max: 120,
+                    divisions: 11, // 10,20,...,120
+                    value: tempKmh.clamp(10, 120).toDouble(),
+                    label: '${tempKmh.toStringAsFixed(0)} km/h',
+                    onChanged: (value) {
+                      setStateDialog(() {
+                        tempKmh = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Reminders will be ignored when your speed is above this limit\n'
+                        '(e.g., when travelling in a vehicle).',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _speedThresholdMps = tempKmh / 3.6; // back to m/s
+                    });
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _checkNearbyTasks() async {
@@ -161,6 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
     int triggered = 0;
 
     for (final t in _tasks) {
+      if (_isExpired(t) || t.isCompleted) continue;
       final distance = Geolocator.distanceBetween(
         currentLat,
         currentLng,
@@ -227,67 +294,103 @@ class _HomeScreenState extends State<HomeScreen> {
     await _loadTasks();
   }
 
+  Widget _buildTaskList(List<Task> tasks) {
+    if (tasks.isEmpty) {
+      return const Center(
+        child: Text('No reminders here.'),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: tasks.length,
+      itemBuilder: (context, index) {
+        final t = tasks[index];
+        return Dismissible(
+          key: ValueKey(t.id ?? t.title + index.toString()),
+          direction: DismissDirection.endToStart,
+          background: Container(
+            color: Colors.red,
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: const Icon(Icons.delete, color: Colors.white),
+          ),
+          onDismissed: (_) => _deleteTask(t),
+          child: ListTile(
+            onTap: () => _editTask(t),
+            title: Text(t.title),
+            subtitle: Text(
+              'Radius: ${t.radiusMeters.toStringAsFixed(0)} m\n'
+                  'Lat: ${t.latitude.toStringAsFixed(4)}, '
+                  'Lng: ${t.longitude.toStringAsFixed(4)}',
+            ),
+            isThreeLine: true,
+            trailing: IconButton(
+              icon: Icon(
+                t.isCompleted
+                    ? Icons.check_circle
+                    : Icons.radio_button_unchecked,
+                color: t.isCompleted ? Colors.green : Colors.grey,
+              ),
+              onPressed: () => _toggleComplete(t),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('GeoRemind'),
-        actions: [
-          IconButton(
-            onPressed: _checkNearbyTasks,
-            icon: const Icon(Icons.notifications_active),
-            tooltip: 'Check nearby reminders',
+    final activeTasks = _tasks
+        .where((t) => !t.isCompleted && !_isExpired(t))
+        .toList();
+
+    final completedTasks = _tasks
+        .where((t) => t.isCompleted)
+        .toList();
+
+    final expiredTasks = _tasks
+        .where((t) => !t.isCompleted && _isExpired(t))
+        .toList();
+
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('GeoRemind'),
+          actions: [
+            IconButton(
+              onPressed: _checkNearbyTasks,
+              icon: const Icon(Icons.notifications_active),
+              tooltip: 'Check nearby reminders',
+            ),
+            IconButton(
+              onPressed: _openSettingsDialog,
+              icon: const Icon(Icons.settings),
+              tooltip: 'Settings',
+            ),
+          ],
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Active'),
+              Tab(text: 'Completed'),
+              Tab(text: 'Expired'),
+            ],
           ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _tasks.isEmpty
-          ? const Center(
-        child: Text('No reminders yet. Tap + to add one.'),
-      )
-          : ListView.builder(
-        itemCount: _tasks.length,
-        itemBuilder: (context, index) {
-          final t = _tasks[index];
-          return Dismissible(
-            key: ValueKey(t.id ?? t.title + index.toString()),
-            direction: DismissDirection.endToStart,
-            background: Container(
-              color: Colors.red,
-              alignment: Alignment.centerRight,
-              padding:
-              const EdgeInsets.symmetric(horizontal: 16),
-              child:
-              const Icon(Icons.delete, color: Colors.white),
-            ),
-            onDismissed: (_) => _deleteTask(t),
-            child: ListTile(
-              onTap: () => _editTask(t),
-              title: Text(t.title),
-              subtitle: Text(
-                'Radius: ${t.radiusMeters.toStringAsFixed(0)} m\n'
-                    'Lat: ${t.latitude.toStringAsFixed(4)}, '
-                    'Lng: ${t.longitude.toStringAsFixed(4)}',
-              ),
-              isThreeLine: true,
-              trailing: IconButton(
-                icon: Icon(
-                  t.isCompleted
-                      ? Icons.check_circle
-                      : Icons.radio_button_unchecked,
-                  color:
-                  t.isCompleted ? Colors.green : Colors.grey,
-                ),
-                onPressed: () => _toggleComplete(t),
-              ),
-            ),
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addTask,
-        child: const Icon(Icons.add),
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : TabBarView(
+          children: [
+            _buildTaskList(activeTasks),
+            _buildTaskList(completedTasks),
+            _buildTaskList(expiredTasks),
+          ],
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: _addTask,
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }

@@ -6,6 +6,7 @@ class Task {
   final double longitude;
   final double radiusMeters;
   final bool isCompleted;
+  final DateTime? expiresAt;
 
   Task({
     this.id,
@@ -15,6 +16,7 @@ class Task {
     required this.longitude,
     required this.radiusMeters,
     this.isCompleted = false,
+    this.expiresAt,
   });
 
   Map<String, dynamic> toMap() {
@@ -26,6 +28,7 @@ class Task {
       'lng': longitude,
       'radius_m': radiusMeters,
       'is_completed': isCompleted ? 1 : 0,
+      'expires_at': expiresAt?.millisecondsSinceEpoch,
     };
   }
 
@@ -38,6 +41,9 @@ class Task {
       longitude: (map['lng'] as num).toDouble(),
       radiusMeters: (map['radius_m'] as num).toDouble(),
       isCompleted: (map['is_completed'] as int) == 1,
+      expiresAt: map['expires_at'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(map['expires_at'] as int)
+          : null,
     );
   }
 
@@ -49,6 +55,7 @@ class Task {
     double? longitude,
     double? radiusMeters,
     bool? isCompleted,
+    DateTime? expiresAt,
   }) {
     return Task(
       id: id ?? this.id,
@@ -58,6 +65,7 @@ class Task {
       longitude: longitude ?? this.longitude,
       radiusMeters: radiusMeters ?? this.radiusMeters,
       isCompleted: isCompleted ?? this.isCompleted,
+      expiresAt: expiresAt ?? this.expiresAt,
     );
   }
 }

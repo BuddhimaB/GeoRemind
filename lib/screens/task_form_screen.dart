@@ -113,7 +113,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       );
       return;
     }
-
+    final now = DateTime.now();
     final radius = double.tryParse(_radiusController.text.trim()) ?? 100.0;
 
     final task = Task(
@@ -126,6 +126,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       longitude: _longitude!,
       radiusMeters: radius,
       isCompleted: widget.initialTask?.isCompleted ?? false,
+      expiresAt: widget.initialTask?.expiresAt ?? now.add(const Duration(hours: 24)),
     );
 
     Navigator.of(context).pop(task);
